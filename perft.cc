@@ -20,6 +20,7 @@
 #include <iostream>
 #include <chrono>
 #include <string>
+#include <clocale>
 #include "magicmoves.hpp"
 
 #define INITIAL_POSITION (("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))
@@ -1062,9 +1063,6 @@ u64 captures   = 0ULL;
 u64 enpassants = 0ULL;
 u64 castles    = 0ULL;
 u64 promotions = 0ULL;
-// Not yet implemented
-u64 checks     = 0ULL;
-u64 checkmates = 0ULL;
 
 template<int root, int c>
 void perft(Position* pos, Movelist* list, int depth)
@@ -1101,13 +1099,7 @@ void perft(Position* pos, Movelist* list, int depth)
 			default:
 				break;
 			}
-
-			do_move<c>(pos, *move);
-			checks += (get_checkers<c>(pos) > 0ULL);
-			undo_move<c>(pos);
 		}
-		if (!legal_moves && get_checkers<!c>(pos))
-			++checkmates;
 	} else {
 		char mstr[6];
 		u64 divide_count;
@@ -1121,7 +1113,7 @@ void perft(Position* pos, Movelist* list, int depth)
 			if (root) {
 				divide_count = leaves - divide_count;
 				move_str(*move, mstr);
-				printf("%s: %llu\n", mstr, divide_count);
+				printf("%s: %'llu\n", mstr, divide_count);
 			}
 		}
 	}
@@ -1132,6 +1124,7 @@ int main(int argc, char** argv)
 	initmagicmoves();
 	init_atks();
 	init_intervening_sqs();
+	setlocale(LC_NUMERIC, "");
 
 	printf("Enter fen(default is startpos): ");
 	std::string fen;
@@ -1153,8 +1146,6 @@ int main(int argc, char** argv)
 		enpassants = 0ULL;
 		castles    = 0ULL;
 		promotions = 0ULL;
-		checks     = 0ULL;
-		checkmates = 0ULL;
 		t1 = std::chrono::duration_cast<std::chrono::milliseconds> (
 			std::chrono::system_clock::now().time_since_epoch()
 		).count();
@@ -1162,13 +1153,11 @@ int main(int argc, char** argv)
 		t2 = std::chrono::duration_cast<std::chrono::milliseconds> (
 			std::chrono::system_clock::now().time_since_epoch()
 		).count();
-		printf("Perft(%2d): %ld ms\n", depth, (t2 - t1));
-		printf("Leaves:     %llu\n", leaves);
-		printf("Captures:   %llu\n", captures);
-		printf("Enpassants: %llu\n", enpassants);
-		printf("Castles:    %llu\n", castles);
-		printf("Promotions: %llu\n", promotions);
-		printf("Checks:     %llu\n", checks);
-		//printf("Checkmates: %llu\n", checkmates);
+		printf("Perft(%2d): %'ld ms\n", depth, (t2 - t1));
+		printf("Leaves:     %'llu\n", leaves);
+		printf("Captures:   %'llu\n", captures);
+		printf("Enpassants: %'llu\n", enpassants);
+		printf("Castles:    %'llu\n", castles);
+		printf("Promotions: %'llu\n", promotions);
 	}
 }
