@@ -58,12 +58,12 @@
 
 typedef unsigned long long u64;
 
-enum Colors : int {
+enum Colors {
 	WHITE,
 	BLACK
 };
 
-enum PieceTypes : int {
+enum PieceTypes {
 	PAWN = 2,
 	KNIGHT,
 	BISHOP,
@@ -85,7 +85,7 @@ enum CastlingRights {
 	BQC = 8
 };
 
-enum Squares : int {
+enum Squares {
 	A1, B1, C1, D1, E1, F1, G1, H1,
 	A2, B2, C2, D2, E2, F2, G2, H2,
 	A3, B3, C3, D3, E3, F3, G3, H3,
