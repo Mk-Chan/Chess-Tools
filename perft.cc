@@ -37,26 +37,6 @@
 #define PROM_TYPE_MASK (7 << PROM_TYPE_SHIFT)
 #define CAP_TYPE_MASK  (7 << CAP_TYPE_SHIFT)
 
-#define rank_of(sq) (sq >> 3)
-#define file_of(sq) (sq & 7)
-
-#define from_sq(m)   (m & 0x3f)
-#define to_sq(m)     ((m >> 6) & 0x3f)
-#define move_type(m) (m & MOVE_TYPE_MASK)
-#define prom_type(m) ((m & PROM_TYPE_MASK) >> PROM_TYPE_SHIFT)
-#define cap_type(m)  ((m & CAP_TYPE_MASK) >> CAP_TYPE_SHIFT)
-
-#define popcnt(bb)  (__builtin_popcountll(bb))
-#define bitscan(bb) (__builtin_ctzll(bb))
-
-#define move_normal(from, to)              (from | (to << 6) | NORMAL)
-#define move_cap(from, to, cap)            (from | (to << 6) | NORMAL | (cap << CAP_TYPE_SHIFT))
-#define move_double_push(from, to)         (from | (to << 6) | DOUBLE_PUSH)
-#define move_castle(from, to)              (from | (to << 6) | CASTLE)
-#define move_ep(from, to)                  (from | (to << 6) | ENPASSANT)
-#define move_prom(from, to, prom)          (from | (to << 6) | PROMOTION | prom)
-#define move_prom_cap(from, to, prom, cap) (from | (to << 6) | PROMOTION | prom | (cap << CAP_TYPE_SHIFT))
-
 typedef unsigned long long u64;
 
 enum Colors {
@@ -99,10 +79,12 @@ enum Squares {
 
 enum MoveTypes {
 	NORMAL,
-	CASTLE      = 1 << MOVE_TYPE_SHIFT,
-	ENPASSANT   = 2 << MOVE_TYPE_SHIFT,
-	PROMOTION   = 3 << MOVE_TYPE_SHIFT,
-	DOUBLE_PUSH = 4 << MOVE_TYPE_SHIFT
+	CASTLE       = 1 << MOVE_TYPE_SHIFT,
+	ENPASSANT    = 2 << MOVE_TYPE_SHIFT,
+	PROMOTION    = 3 << MOVE_TYPE_SHIFT,
+	DOUBLE_PUSH  = 4 << MOVE_TYPE_SHIFT,
+	CAPTURE      = 5 << MOVE_TYPE_SHIFT,
+	PROM_CAPTURE = 6 << MOVE_TYPE_SHIFT
 };
 
 enum PromotionTypes {
@@ -126,6 +108,28 @@ enum Ranks {
 	RANK_7,
 	RANK_8
 };
+
+#define rank_of(sq) (sq >> 3)
+#define file_of(sq) (sq & 7)
+
+#define from_sq(m)   (m & 0x3f)
+#define to_sq(m)     ((m >> 6) & 0x3f)
+#define move_type(m) (m & MOVE_TYPE_MASK)
+#define prom_type(m) ((m & PROM_TYPE_MASK) >> PROM_TYPE_SHIFT)
+#define cap_type(m)  ((m & CAP_TYPE_MASK) >> CAP_TYPE_SHIFT)
+
+#define popcnt(bb)  (__builtin_popcountll(bb))
+#define bitscan(bb) (__builtin_ctzll(bb))
+
+#define move_normal(from, to)              (from | (to << 6) | NORMAL)
+#define move_cap(from, to, cap)            (from | (to << 6) | CAPTURE | (cap << CAP_TYPE_SHIFT))
+#define move_double_push(from, to)         (from | (to << 6) | DOUBLE_PUSH)
+#define move_castle(from, to)              (from | (to << 6) | CASTLE)
+#define move_ep(from, to)                  (from | (to << 6) | ENPASSANT)
+#define move_prom(from, to, prom)          (from | (to << 6) | PROMOTION | prom)
+#define move_prom_cap(from, to, prom, cap) (from | (to << 6) | PROM_CAPTURE | prom | (cap << CAP_TYPE_SHIFT))
+
+static int stm;
 
 static u64 p_atks_bb[2][64];
 static u64 n_atks_bb[64];
@@ -162,7 +166,6 @@ struct State {
 
 struct Position {
 	u64    bb[9];
-	int    stm;
 	int    board[64];
 	State* state;
 	State  hist[MAX_PLY];
@@ -329,20 +332,21 @@ void undo_move(Position* const pos)
 {
 	--pos->state;
 
-	pos->stm ^= 1;
 	int const m    = pos->state->move,
 	          from = from_sq(m),
 	          to   = to_sq(m),
 	          mt   = move_type(m);
 
 	switch (mt) {
+	case CAPTURE:
+		{
+			move_piece<c>(pos, to, from, pos->board[to]);
+			put_piece<!c>(pos, to, cap_type(m));
+		}
+		break;
 	case NORMAL:
 		{
-			int const pt = pos->board[to];
-			move_piece<c>(pos, to, from, pt);
-			int const captured_pt = cap_type(m);
-			if(captured_pt)
-				put_piece<!c>(pos, to, captured_pt);
+			move_piece<c>(pos, to, from, pos->board[to]);
 		}
 		break;
 	case DOUBLE_PUSH:
@@ -378,14 +382,17 @@ void undo_move(Position* const pos)
 			}
 		}
 		break;
+	case PROM_CAPTURE:
+		{
+			remove_piece<c>(pos, to, prom_type(m));
+			put_piece<c>(pos, from, PAWN);
+			put_piece<!c>(pos, to, cap_type(m));
+		}
+		break;
 	default:
 		{
 			remove_piece<c>(pos, to, prom_type(m));
 			put_piece<c>(pos, from, PAWN);
-
-			int const captured_pt = cap_type(m);
-			if(captured_pt)
-				put_piece<!c>(pos, to, captured_pt);
 		}
 		break;
 	}
@@ -416,19 +423,17 @@ void do_move(Position* const pos, int const m)
 	          mt   = move_type(m);
 
 	next->castling_rights =  (curr->castling_rights & castle_perms[from]) & castle_perms[to];
-	pos->stm ^= 1;
 
 	switch (mt) {
+	case CAPTURE:
+		{
+			remove_piece<!c>(pos, to, cap_type(m));
+			move_piece<c>(pos, from, to, pos->board[from]);
+		}
+		break;
 	case NORMAL:
 		{
-			int const pt     = pos->board[from];
-			int const cap_pt = cap_type(m);
-			if (!cap_pt) {
-				move_piece<c>(pos, from, to, pt);
-			} else {
-				remove_piece<!c>(pos, to, pos->board[to]);
-				move_piece<c>(pos, from, to, pt);
-			}
+			move_piece<c>(pos, from, to, pos->board[from]);
 		}
 		break;
 	case DOUBLE_PUSH:
@@ -465,11 +470,15 @@ void do_move(Position* const pos, int const m)
 			}
 		}
 		break;
+	case PROM_CAPTURE:
+		{
+			remove_piece<!c>(pos, to, cap_type(m));
+			remove_piece<c>(pos, from, PAWN);
+			put_piece<c>(pos, to, prom_type(m));
+		}
+		break;
 	default:
 		{
-			int const captured_pt = cap_type(m);
-			if (captured_pt)
-				remove_piece<!c>(pos, to, captured_pt);
 			remove_piece<c>(pos, from, PAWN);
 			put_piece<c>(pos, to, prom_type(m));
 		}
@@ -548,7 +557,6 @@ void init_pos(Position* const pos)
 		pos->board[i] = 0;
 	for (i = 0; i != 9; ++i)
 		pos->bb[i] = 0ULL;
-	pos->stm                          = WHITE;
 	pos->state                        = pos->hist;
 	pos->state->pinned_bb             = 0ULL;
 	pos->state->castling_rights       = 0;
@@ -584,7 +592,7 @@ int set_pos(Position* pos, std::string fen)
 	}
 
 	++index;
-	pos->stm = fen[index] == 'w' ? WHITE : BLACK;
+	stm = fen[index] == 'w' ? WHITE : BLACK;
 	index   += 2;
 	while ((c = fen[index++]) != ' ') {
 		if (c == '-') {
@@ -743,8 +751,12 @@ static void gen_check_evasions(Position* pos, Movelist* list)
 	while (evasions_bb) {
 		sq = bitscan(evasions_bb);
 		evasions_bb &= evasions_bb - 1;
-		if (!atkers_to_sq<!c>(pos, sq, sans_king_bb))
-			add_move(move_cap(ksq, sq, pos->board[sq]), list);
+		if (!atkers_to_sq<!c>(pos, sq, sans_king_bb)) {
+			if (pos->board[sq])
+				add_move(move_cap(ksq, sq, pos->board[sq]), list);
+			else
+				add_move(move_normal(ksq, sq), list);
+		}
 	}
 
 	if (checkers_bb & (checkers_bb - 1))
@@ -900,14 +912,14 @@ template<int pt, int c>
 static void gen_moves(Position* pos, Movelist* list)
 {
 	int from;
-	u64 const full_bb    = pos->bb[FULL],
-	          enemy_mask = pos->bb[!c],
-		  vacancy_mask = ~full_bb;
+	u64 const full_bb      = pos->bb[FULL],
+		  opp_mask     = pos->bb[!c],
+	          vacancy_mask = ~full_bb;
 	u64 curr_piece_bb = pos->bb[pt] & pos->bb[c];
 	while (curr_piece_bb) {
 		from           = bitscan(curr_piece_bb);
 		curr_piece_bb &= curr_piece_bb - 1;
-		extract_caps(pos, from, get_atks<pt>(from, full_bb) & enemy_mask, list);
+		extract_caps(pos, from, get_atks<pt>(from, full_bb) & opp_mask, list);
 		extract_moves(from, get_atks<pt>(from, full_bb) & vacancy_mask, list);
 	}
 	gen_moves<pt+1, c>(pos, list);
@@ -1181,7 +1193,7 @@ int main(int argc, char** argv)
 		t1 = std::chrono::duration_cast<std::chrono::milliseconds> (
 			std::chrono::system_clock::now().time_since_epoch()
 		).count();
-		pos.stm == WHITE
+		stm == WHITE
 			? perft<1, WHITE>(&pos, list, depth, count_extras, divide)
 			: perft<1, BLACK>(&pos, list, depth, count_extras, divide);
 		t2 = std::chrono::duration_cast<std::chrono::milliseconds> (
