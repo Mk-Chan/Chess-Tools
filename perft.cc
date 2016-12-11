@@ -21,6 +21,7 @@
 #include <chrono>
 #include <string>
 #include <clocale>
+#include <unistd.h>
 #include "magicmoves.hpp"
 
 #define INITIAL_POSITION (("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))
@@ -1057,7 +1058,7 @@ u64 castles    = 0ULL;
 u64 promotions = 0ULL;
 
 template<int root, int c>
-void perft(Position* pos, Movelist* list, int depth)
+void perft(Position* pos, Movelist* list, int depth, bool count_extras, bool divide = false)
 {
 	list->end = list->moves;
 	pos->state->pinned_bb = get_pinned<c>(pos);
@@ -1073,20 +1074,22 @@ void perft(Position* pos, Movelist* list, int depth)
 		for (move = list->moves; move < list->end; ++move) {
 			if (!legal_move<c>(pos, *move)) continue;
 			++leaves;
-			captures += !!cap_type(*move);
-			switch (move_type(*move)) {
-			case ENPASSANT:
-				++enpassants;
-				++captures;
-				break;
-			case CASTLE:
-				++castles;
-				break;
-			case PROMOTION:
-				++promotions;
-				break;
-			default:
-				break;
+			if (count_extras) {
+				captures += !!cap_type(*move);
+				switch (move_type(*move)) {
+				case ENPASSANT:
+					++enpassants;
+					++captures;
+					break;
+				case CASTLE:
+					++castles;
+					break;
+				case PROMOTION:
+					++promotions;
+					break;
+				default:
+					break;
+				}
 			}
 		}
 	} else {
@@ -1094,12 +1097,12 @@ void perft(Position* pos, Movelist* list, int depth)
 		u64 divide_count;
 		for (move = list->moves; move < list->end; ++move) {
 			if (!legal_move<c>(pos, *move)) continue;
-			if (root)
+			if (root && divide)
 				divide_count = leaves;
 			do_move<c>(pos, *move);
-			perft<0, !c>(pos, list + 1, depth - 1);
+			perft<0, !c>(pos, list + 1, depth - 1, count_extras);
 			undo_move<c>(pos);
-			if (root) {
+			if (root && divide) {
 				divide_count = leaves - divide_count;
 				move_str(*move, mstr);
 				printf("%s: %'llu\n", mstr, divide_count);
@@ -1115,21 +1118,61 @@ int main(int argc, char** argv)
 	init_intervening_sqs();
 	setlocale(LC_NUMERIC, "");
 
-	printf("Enter fen(default is startpos): ");
+	bool count_extras = false;
+	bool divide = false;
+	bool fen_set = false;
+	bool depth_set = false;
 	std::string fen;
-	std::getline(std::cin, fen);
-	if (fen == "")
-		fen = INITIAL_POSITION;
+	int max_depth;
+
+	int c;
+	while ((c = getopt(argc, argv, "sed:f:")) != -1) {
+		switch (c) {
+		case 's':
+			divide = true;
+			break;
+		case 'e':
+			count_extras = true;
+			break;
+		case 'd':
+			depth_set = true;
+			max_depth = std::atoi(optarg);
+			if (max_depth > MAX_PLY) {
+				std::cout << "Max depth allowed: " << MAX_PLY << "\n";
+				return 1;
+			}
+			break;
+		case 'f':
+			fen_set = true;
+			fen = optarg;
+			break;
+		case '?':
+			std::cout << "Unknown option: " << optopt << "\n";
+			return 1;
+		default:
+			abort();
+		}
+	}
+
+	if (!(fen_set && depth_set)) {
+		std::cout << "Usage: ./perft(_popcnt) <options> -d <depth> -f \"<fen>\"" << "\n"
+			  << "Options:\n"
+			  << "-e => Count extras: captures, enpassants, castles and promotions\n"
+			  << "-s => Split(Divide) at root\n"
+			  << "-d <depth> => Max depth\n"
+			  << "-f \"<fen>\" => Perft the fen" << std::endl;
+		return 1;
+	}
 
 	Position pos;
 	set_pos(&pos, fen);
 
 	print_board(&pos);
 
-	Movelist list[MAX_PLY];
+	Movelist* list = new Movelist[max_depth];
 	long t1, t2;
 	int depth;
-	for (depth = 1; depth <= MAX_PLY; ++depth) {
+	for (depth = 1; depth <= max_depth; ++depth) {
 		leaves     = 0ULL;
 		captures   = 0ULL;
 		enpassants = 0ULL;
@@ -1138,15 +1181,19 @@ int main(int argc, char** argv)
 		t1 = std::chrono::duration_cast<std::chrono::milliseconds> (
 			std::chrono::system_clock::now().time_since_epoch()
 		).count();
-		perft<1, WHITE>(&pos, list, depth);
+		pos.stm == WHITE
+			? perft<1, WHITE>(&pos, list, depth, count_extras, divide)
+			: perft<1, BLACK>(&pos, list, depth, count_extras, divide);
 		t2 = std::chrono::duration_cast<std::chrono::milliseconds> (
 			std::chrono::system_clock::now().time_since_epoch()
 		).count();
 		printf("Perft(%2d): %'ld ms\n", depth, (t2 - t1));
 		printf("Leaves:     %'llu\n", leaves);
-		printf("Captures:   %'llu\n", captures);
-		printf("Enpassants: %'llu\n", enpassants);
-		printf("Castles:    %'llu\n", castles);
-		printf("Promotions: %'llu\n", promotions);
+		if (count_extras) {
+			printf("Captures:   %'llu\n", captures);
+			printf("Enpassants: %'llu\n", enpassants);
+			printf("Castles:    %'llu\n", castles);
+			printf("Promotions: %'llu\n", promotions);
+		}
 	}
 }
