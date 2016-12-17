@@ -20,7 +20,6 @@
 #include <iostream>
 #include <chrono>
 #include <string>
-#include <clocale>
 #include <unistd.h>
 #include "magicmoves.hpp"
 
@@ -1128,7 +1127,6 @@ int main(int argc, char** argv)
 	initmagicmoves();
 	init_atks();
 	init_intervening_sqs();
-	setlocale(LC_NUMERIC, "");
 
 	bool count_extras = false;
 	bool divide = false;
