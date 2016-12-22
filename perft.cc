@@ -1030,8 +1030,8 @@ u64 enpassants = 0ULL;
 u64 castles    = 0ULL;
 u64 promotions = 0ULL;
 
-template<int root, int c>
-void perft(Position* pos, Movelist* list, int depth, bool count_extras, bool divide = false)
+template<int c, bool count_extras, bool divide>
+void perft(Position* pos, Movelist* list, int depth)
 {
 	list->end = list->moves;
 	pos->state->pinned_bb = get_pinned<c>(pos);
@@ -1069,12 +1069,12 @@ void perft(Position* pos, Movelist* list, int depth, bool count_extras, bool div
 		u64 divide_count;
 		for (move = list->moves; move < list->end; ++move) {
 			if (!legal_move<c>(pos, *move)) continue;
-			if (root && divide)
+			if (divide)
 				divide_count = leaves;
 			do_move<c>(pos, *move);
-			perft<0, !c>(pos, list + 1, depth - 1, count_extras);
+			perft<!c, count_extras, false>(pos, list + 1, depth - 1);
 			undo_move<c>(pos);
-			if (root && divide) {
+			if (divide) {
 				divide_count = leaves - divide_count;
 				move_str(*move, mstr);
 				printf("%s: %'llu\n", mstr, divide_count);
@@ -1156,8 +1156,14 @@ int main(int argc, char** argv)
 			std::chrono::system_clock::now().time_since_epoch()
 		).count();
 		stm == WHITE
-			? perft<1, WHITE>(&pos, list, depth, count_extras, divide)
-			: perft<1, BLACK>(&pos, list, depth, count_extras, divide);
+			? count_extras ? divide ? perft<WHITE, true, true>(&pos, list, depth)
+			                        : perft<WHITE, true, false>(&pos, list, depth)
+				       : divide ? perft<WHITE, false, true>(&pos, list, depth)
+			                        : perft<WHITE, false, false>(&pos, list, depth)
+			: count_extras ? divide ? perft<BLACK, true, true>(&pos, list, depth)
+			                        : perft<BLACK, true, false>(&pos, list, depth)
+				       : divide ? perft<BLACK, false, true>(&pos, list, depth)
+			                        : perft<BLACK, false, false>(&pos, list, depth);
 		t2 = std::chrono::duration_cast<std::chrono::milliseconds> (
 			std::chrono::system_clock::now().time_since_epoch()
 		).count();
