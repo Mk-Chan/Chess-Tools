@@ -337,15 +337,15 @@ void undo_move(Position* const pos)
 	          mt   = move_type(m);
 
 	switch (mt) {
+	case NORMAL:
+		{
+			move_piece<c>(pos, to, from, pos->board[to]);
+		}
+		break;
 	case CAPTURE:
 		{
 			move_piece<c>(pos, to, from, pos->board[to]);
 			put_piece<!c>(pos, to, cap_type(m));
-		}
-		break;
-	case NORMAL:
-		{
-			move_piece<c>(pos, to, from, pos->board[to]);
 		}
 		break;
 	case DOUBLE_PUSH:
@@ -424,14 +424,14 @@ void do_move(Position* const pos, int const m)
 	next->castling_rights =  (curr->castling_rights & castle_perms[from]) & castle_perms[to];
 
 	switch (mt) {
-	case CAPTURE:
+	case NORMAL:
 		{
-			remove_piece<!c>(pos, to, cap_type(m));
 			move_piece<c>(pos, from, to, pos->board[from]);
 		}
 		break;
-	case NORMAL:
+	case CAPTURE:
 		{
+			remove_piece<!c>(pos, to, cap_type(m));
 			move_piece<c>(pos, from, to, pos->board[from]);
 		}
 		break;
@@ -632,34 +632,34 @@ static inline u64 atkers_to_sq(Position const * const pos, int const sq, u64 con
 		& pos->bb[by_color];
 }
 
-static inline void add_move(int const m, Movelist* list)
+static inline void add_move(int const m, int** end)
 {
-	*list->end = m;
-	++list->end;
+	**end = m;
+	++*end;
 }
 
-static void extract_moves(int const from, u64 atks_bb, Movelist* const list)
+static void extract_moves(int const from, u64 atks_bb, int** end)
 {
 	int to;
 	while (atks_bb) {
 		to       = bitscan(atks_bb);
 		atks_bb &= atks_bb - 1;
-		add_move(move_normal(from, to), list);
+		add_move(move_normal(from, to), end);
 	}
 }
 
-static void extract_caps(Position* const pos, int const from, u64 atks_bb, Movelist* const list)
+static void extract_caps(int board[64], int const from, u64 atks_bb, int** end)
 {
 	int to;
 	while (atks_bb) {
 		to       = bitscan(atks_bb);
 		atks_bb &= atks_bb - 1;
-		add_move(move_cap(from, to, pos->board[to]), list);
+		add_move(move_cap(from, to, board[to]), end);
 	}
 }
 
 template<int c>
-static void gen_check_blocks(Position* const pos, u64 blocking_poss_bb, Movelist* const list)
+static void gen_check_blocks(Position* const pos, u64 blocking_poss_bb, int** end)
 {
 	u64 blockers_poss_bb, pawn_block_poss_bb;
 	int blocking_sq, blocker;
@@ -674,29 +674,29 @@ static void gen_check_blocks(Position* const pos, u64 blocking_poss_bb, Movelist
 		if (pawn_block_poss_bb & pawns_bb) {
 			blocker = bitscan(pawn_block_poss_bb);
 			if (is_prom_sq[blocking_sq]) {
-				add_move(move_prom(blocker, blocking_sq, TO_QUEEN), list);
-				add_move(move_prom(blocker, blocking_sq, TO_KNIGHT), list);
-				add_move(move_prom(blocker, blocking_sq, TO_ROOK), list);
-				add_move(move_prom(blocker, blocking_sq, TO_BISHOP), list);
+				add_move(move_prom(blocker, blocking_sq, TO_QUEEN), end);
+				add_move(move_prom(blocker, blocking_sq, TO_KNIGHT), end);
+				add_move(move_prom(blocker, blocking_sq, TO_ROOK), end);
+				add_move(move_prom(blocker, blocking_sq, TO_BISHOP), end);
 			} else {
-				add_move(move_normal(blocker, blocking_sq), list);
+				add_move(move_normal(blocker, blocking_sq), end);
 			}
 		} else if (((c == WHITE && rank_of(blocking_sq) == RANK_4)
 			 || (c == BLACK && rank_of(blocking_sq) == RANK_5))
 			   && (pawn_block_poss_bb & vacancy_mask)
 			   && (pawn_block_poss_bb = pawn_shift<!c>(pawn_block_poss_bb) & pawns_bb)) {
-			add_move(move_double_push(bitscan(pawn_block_poss_bb), blocking_sq), list);
+			add_move(move_double_push(bitscan(pawn_block_poss_bb), blocking_sq), end);
 		}
 		blockers_poss_bb = atkers_to_sq<c>(pos, blocking_sq, full_bb) & inlcusion_mask;
 		while (blockers_poss_bb) {
-			add_move(move_normal(bitscan(blockers_poss_bb), blocking_sq), list);
+			add_move(move_normal(bitscan(blockers_poss_bb), blocking_sq), end);
 			blockers_poss_bb &= blockers_poss_bb - 1;
 		}
 	}
 }
 
 template<int c>
-static void gen_checker_caps(Position* pos, u64 checkers_bb, Movelist* list)
+static void gen_checker_caps(Position* pos, u64 checkers_bb, int** end)
 {
 	u64 atkers_bb;
 	int checker, atker, checker_pt;
@@ -710,7 +710,7 @@ static void gen_checker_caps(Position* pos, u64 checkers_bb, Movelist* list)
 		while (ep_poss) {
 			atker    = bitscan(ep_poss);
 			ep_poss &= ep_poss - 1;
-			add_move(move_ep(atker, ep_sq), list);
+			add_move(move_ep(atker, ep_sq), end);
 		}
 	}
 	while (checkers_bb) {
@@ -723,19 +723,19 @@ static void gen_checker_caps(Position* pos, u64 checkers_bb, Movelist* list)
 			atkers_bb &= atkers_bb - 1;
 			if (  (BB(atker) & pawns_bb)
 			    && is_prom_sq[checker]) {
-				add_move(move_prom_cap(atker, checker, TO_QUEEN, checker_pt), list);
-				add_move(move_prom_cap(atker, checker, TO_KNIGHT, checker_pt), list);
-				add_move(move_prom_cap(atker, checker, TO_ROOK, checker_pt), list);
-				add_move(move_prom_cap(atker, checker, TO_BISHOP, checker_pt), list);
+				add_move(move_prom_cap(atker, checker, TO_QUEEN, checker_pt), end);
+				add_move(move_prom_cap(atker, checker, TO_KNIGHT, checker_pt), end);
+				add_move(move_prom_cap(atker, checker, TO_ROOK, checker_pt), end);
+				add_move(move_prom_cap(atker, checker, TO_BISHOP, checker_pt), end);
 			} else {
-				add_move(move_cap(atker, checker, checker_pt), list);
+				add_move(move_cap(atker, checker, checker_pt), end);
 			}
 		}
 	}
 }
 
 template<int c>
-static void gen_check_evasions(Position* pos, Movelist* list)
+static void gen_check_evasions(Position* pos, int** end)
 {
 	int const ksq = bitscan(pos->bb[KING] & pos->bb[c]);
 
@@ -751,27 +751,27 @@ static void gen_check_evasions(Position* pos, Movelist* list)
 		evasions_bb &= evasions_bb - 1;
 		if (!atkers_to_sq<!c>(pos, sq, sans_king_bb)) {
 			if (pos->board[sq])
-				add_move(move_cap(ksq, sq, pos->board[sq]), list);
+				add_move(move_cap(ksq, sq, pos->board[sq]), end);
 			else
-				add_move(move_normal(ksq, sq), list);
+				add_move(move_normal(ksq, sq), end);
 		}
 	}
 
 	if (checkers_bb & (checkers_bb - 1))
 		return;
 
-	gen_checker_caps<c>(pos, checkers_bb, list);
+	gen_checker_caps<c>(pos, checkers_bb, end);
 
 	if (checkers_bb & k_atks_bb[ksq])
 		return;
 
 	u64 const blocking_poss_bb = intervening_sqs_bb[bitscan(checkers_bb)][ksq];
 	if (blocking_poss_bb)
-		gen_check_blocks<c>(pos, blocking_poss_bb, list);
+		gen_check_blocks<c>(pos, blocking_poss_bb, end);
 }
 
 template<int c>
-static void gen_pawn_moves(Position* pos, Movelist* list)
+static void gen_pawn_moves(Position* pos, int** end)
 {
 	int to, cap_pt, fr;
 	u64 single_push, from, cap_candidates;
@@ -785,7 +785,7 @@ static void gen_pawn_moves(Position* pos, Movelist* list)
 		while (ep_poss) {
 			fr       = bitscan(ep_poss);
 			ep_poss &= ep_poss - 1;
-			add_move(move_ep(fr, ep_sq), list);
+			add_move(move_ep(fr, ep_sq), end);
 		}
 	}
 	while (prom_candidates_bb) {
@@ -795,19 +795,19 @@ static void gen_pawn_moves(Position* pos, Movelist* list)
 		cap_candidates      = p_atks_bb[c][fr] & pos->bb[!c];
 		if (single_push & vacancy_mask) {
 			to = bitscan(single_push);
-			add_move(move_prom(fr, to, TO_QUEEN), list);
-			add_move(move_prom(fr, to, TO_KNIGHT), list);
-			add_move(move_prom(fr, to, TO_ROOK), list);
-			add_move(move_prom(fr, to, TO_BISHOP), list);
+			add_move(move_prom(fr, to, TO_QUEEN), end);
+			add_move(move_prom(fr, to, TO_KNIGHT), end);
+			add_move(move_prom(fr, to, TO_ROOK), end);
+			add_move(move_prom(fr, to, TO_BISHOP), end);
 		}
 		while (cap_candidates) {
 			to              = bitscan(cap_candidates);
 			cap_candidates &= cap_candidates - 1;
 			cap_pt          = pos->board[to];
-			add_move(move_prom_cap(fr, to, TO_QUEEN, cap_pt), list);
-			add_move(move_prom_cap(fr, to, TO_KNIGHT, cap_pt), list);
-			add_move(move_prom_cap(fr, to, TO_ROOK, cap_pt), list);
-			add_move(move_prom_cap(fr, to, TO_BISHOP, cap_pt), list);
+			add_move(move_prom_cap(fr, to, TO_QUEEN, cap_pt), end);
+			add_move(move_prom_cap(fr, to, TO_KNIGHT, cap_pt), end);
+			add_move(move_prom_cap(fr, to, TO_ROOK, cap_pt), end);
+			add_move(move_prom_cap(fr, to, TO_BISHOP, cap_pt), end);
 		}
 	}
 	while (pawns_bb) {
@@ -817,28 +817,28 @@ static void gen_pawn_moves(Position* pos, Movelist* list)
 		single_push = pawn_shift<c>(from);
 		cap_candidates = p_atks_bb[c][fr] & pos->bb[!c];
 		if (single_push & vacancy_mask) {
-			add_move(move_normal(bitscan(from), bitscan(single_push)), list);
+			add_move(move_normal(bitscan(from), bitscan(single_push)), end);
 			if (c == WHITE && (from & rank_mask[RANK_2])) {
 				u64 const double_push = single_push << 8;
 				if (double_push & vacancy_mask)
-					add_move(move_double_push(bitscan(from), bitscan(double_push)), list);
+					add_move(move_double_push(bitscan(from), bitscan(double_push)), end);
 			} else if (c == BLACK && (from & rank_mask[RANK_7])) {
 				u64 const double_push = single_push >> 8;
 				if (double_push & vacancy_mask)
-					add_move(move_double_push(bitscan(from), bitscan(double_push)), list);
+					add_move(move_double_push(bitscan(from), bitscan(double_push)), end);
 			}
 		}
 		while (cap_candidates) {
 			to              = bitscan(cap_candidates);
 			cap_pt          = pos->board[to];
 			cap_candidates &= cap_candidates - 1;
-			add_move(move_cap(fr, to, cap_pt), list);
+			add_move(move_cap(fr, to, cap_pt), end);
 		}
 	}
 }
 
 template<int c>
-static inline void gen_castling(Position* pos, Movelist* list)
+static inline void gen_castling(Position* pos, int** end)
 {
 	static int const castling_poss[2][2] = {
 		{ WKC, WQC },
@@ -863,17 +863,17 @@ static inline void gen_castling(Position* pos, Movelist* list)
 	    && !(castle_mask[c][0] & pos->bb[FULL])
 	    && !(atkers_to_sq<!c>(pos, castling_intermediate_sqs[c][0][0], full_bb))
 	    && !(atkers_to_sq<!c>(pos, castling_intermediate_sqs[c][0][1], full_bb)))
-		add_move(move_castle(castling_king_sqs[c][0][0], castling_king_sqs[c][0][1]), list);
+		add_move(move_castle(castling_king_sqs[c][0][0], castling_king_sqs[c][0][1]), end);
 
 	if (    (castling_poss[c][1] & pos->state->castling_rights)
 	    && !(castle_mask[c][1] & pos->bb[FULL])
 	    && !(atkers_to_sq<!c>(pos, castling_intermediate_sqs[c][1][0], full_bb))
 	    && !(atkers_to_sq<!c>(pos, castling_intermediate_sqs[c][1][1], full_bb)))
-		add_move(move_castle(castling_king_sqs[c][1][0], castling_king_sqs[c][1][1]), list);
+		add_move(move_castle(castling_king_sqs[c][1][0], castling_king_sqs[c][1][1]), end);
 }
 
 template<int pt, int c>
-static void gen_moves(Position* pos, Movelist* list)
+static void gen_moves(Position* pos, int** end)
 {
 	int from;
 	u64 const full_bb      = pos->bb[FULL],
@@ -883,42 +883,42 @@ static void gen_moves(Position* pos, Movelist* list)
 	while (curr_piece_bb) {
 		from           = bitscan(curr_piece_bb);
 		curr_piece_bb &= curr_piece_bb - 1;
-		extract_caps(pos, from, get_atks<pt>(from, full_bb) & opp_mask, list);
-		extract_moves(from, get_atks<pt>(from, full_bb) & vacancy_mask, list);
+		extract_caps(pos->board, from, get_atks<pt>(from, full_bb) & opp_mask, end);
+		extract_moves(from, get_atks<pt>(from, full_bb) & vacancy_mask, end);
 	}
-	gen_moves<pt+1, c>(pos, list);
+	gen_moves<pt+1, c>(pos, end);
 }
 
 template<>
-inline void gen_moves<PAWN, WHITE>(Position* pos, Movelist* list)
+inline void gen_moves<PAWN, WHITE>(Position* pos, int** end)
 {
-	gen_pawn_moves<WHITE>(pos, list);
-	gen_moves<KNIGHT, WHITE>(pos, list);
+	gen_pawn_moves<WHITE>(pos, end);
+	gen_moves<KNIGHT, WHITE>(pos, end);
 }
 
 template<>
-inline void gen_moves<PAWN, BLACK>(Position* pos, Movelist* list)
+inline void gen_moves<PAWN, BLACK>(Position* pos, int** end)
 {
-	gen_pawn_moves<BLACK>(pos, list);
-	gen_moves<KNIGHT, BLACK>(pos, list);
+	gen_pawn_moves<BLACK>(pos, end);
+	gen_moves<KNIGHT, BLACK>(pos, end);
 }
 
 template<>
-inline void gen_moves<KING, WHITE>(Position* pos, Movelist* list)
+inline void gen_moves<KING, WHITE>(Position* pos, int** end)
 {
 	int const from = bitscan(pos->bb[KING] & pos->bb[WHITE]);
-	extract_moves(from, k_atks_bb[from] & ~pos->bb[FULL], list);
-	extract_caps(pos, from, k_atks_bb[from] & pos->bb[BLACK], list);
-	gen_castling<WHITE>(pos, list);
+	extract_moves(from, k_atks_bb[from] & ~pos->bb[FULL], end);
+	extract_caps(pos->board, from, k_atks_bb[from] & pos->bb[BLACK], end);
+	gen_castling<WHITE>(pos, end);
 }
 
 template<>
-inline void gen_moves<KING, BLACK>(Position* pos, Movelist* list)
+inline void gen_moves<KING, BLACK>(Position* pos, int** end)
 {
 	int const from = bitscan(pos->bb[KING] & pos->bb[BLACK]);
-	extract_moves(from, k_atks_bb[from] & ~pos->bb[FULL], list);
-	extract_caps(pos, from, k_atks_bb[from] & pos->bb[WHITE], list);
-	gen_castling<BLACK>(pos, list);
+	extract_moves(from, k_atks_bb[from] & ~pos->bb[FULL], end);
+	extract_caps(pos->board, from, k_atks_bb[from] & pos->bb[WHITE], end);
+	gen_castling<BLACK>(pos, end);
 }
 
 template<int to_color>
@@ -964,17 +964,16 @@ static inline int legal_move(Position* const pos, int move)
 	int const ksq  = bitscan(pos->bb[KING] & pos->bb[c]);
 	if (move_type(move) == ENPASSANT) {
 		u64 const to_bb  = BB(pos->state->ep_sq);
-		u64 const cap_bb = pawn_shift<!c>(to_bb);
-		u64 const pieces = (pos->bb[FULL] ^ BB(from) ^ cap_bb) | to_bb;
+		u64 const pieces = (pos->bb[FULL] ^ BB(from) ^ pawn_shift<!c>(to_bb)) | to_bb;
 
-		return     !(Rmagic(ksq, pieces) & ((pos->bb[QUEEN] | pos->bb[ROOK]) & pos->bb[!c]))
-			&& !(Bmagic(ksq, pieces) & ((pos->bb[QUEEN] | pos->bb[BISHOP]) & pos->bb[!c]));
+		return !(Rmagic(ksq, pieces) & ((pos->bb[QUEEN] | pos->bb[ROOK]) & pos->bb[!c]))
+		    && !(Bmagic(ksq, pieces) & ((pos->bb[QUEEN] | pos->bb[BISHOP]) & pos->bb[!c]));
 	} else if (from == ksq) {
-		return      move_type(move) == CASTLE
-			|| !atkers_to_sq<!c>(pos, to_sq(move), pos->bb[FULL]);
+		return move_type(move) == CASTLE
+		   || !atkers_to_sq<!c>(pos, to_sq(move), pos->bb[FULL]);
 	} else {
-		return    !(pos->state->pinned_bb & BB(from))
-			|| (BB(to_sq(move)) & dirn_sqs_bb[from][ksq]);
+		return !(pos->state->pinned_bb & BB(from))
+		     || (BB(to_sq(move)) & dirn_sqs_bb[from][ksq]);
 	}
 }
 
@@ -1037,11 +1036,10 @@ void perft(Position* pos, Movelist* list, int depth, bool count_extras, bool div
 	list->end = list->moves;
 	pos->state->pinned_bb = get_pinned<c>(pos);
 	pos->state->checkers_bb = get_checkers<!c>(pos);
-	if (pos->state->checkers_bb) {
-		gen_check_evasions<c>(pos, list);
-	} else {
-		gen_moves<PAWN, c>(pos, list);
-	}
+	if (pos->state->checkers_bb)
+		gen_check_evasions<c>(pos, &list->end);
+	else
+		gen_moves<PAWN, c>(pos, &list->end);
 
 	int* move;
 	if (depth == 1) {
