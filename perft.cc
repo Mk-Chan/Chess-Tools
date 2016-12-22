@@ -810,14 +810,7 @@ static void gen_pawn_captures(Position* pos, Movelist* list)
 			to              = bitscan(cap_candidates);
 			cap_pt          = pos->board[to];
 			cap_candidates &= cap_candidates - 1;
-			if (is_prom_sq[to]) {
-				add_move(move_prom_cap(from, to, TO_QUEEN, cap_pt), list);
-				add_move(move_prom_cap(from, to, TO_KNIGHT, cap_pt), list);
-				add_move(move_prom_cap(from, to, TO_ROOK, cap_pt), list);
-				add_move(move_prom_cap(from, to, TO_BISHOP, cap_pt), list);
-			} else {
-				add_move(move_cap(from, to, cap_pt), list);
-			}
+			add_move(move_cap(from, to, cap_pt), list);
 		}
 	}
 }
@@ -825,7 +818,6 @@ static void gen_pawn_captures(Position* pos, Movelist* list)
 template<int c>
 static void gen_pawn_quiets(Position* pos, Movelist* list)
 {
-	static u64 const prom_ranks_bb = rank_mask[RANK_1] | rank_mask[RANK_8];
 	u64 single_push, from;
 	u64 const vacancy_mask = ~pos->bb[FULL];
 	u64       pawns_bb     = pos->bb[PAWN] & pos->bb[c];
@@ -849,24 +841,15 @@ static void gen_pawn_quiets(Position* pos, Movelist* list)
 		pawns_bb   &= pawns_bb - 1;
 		single_push = pawn_shift<c>(from);
 		if (single_push & vacancy_mask) {
-			if (single_push & prom_ranks_bb) {
-				int const fr = bitscan(from),
-					  to = bitscan(single_push);
-				add_move(move_prom(fr, to, TO_QUEEN), list);
-				add_move(move_prom(fr, to, TO_KNIGHT), list);
-				add_move(move_prom(fr, to, TO_ROOK), list);
-				add_move(move_prom(fr, to, TO_BISHOP), list);
-			} else {
-				add_move(move_normal(bitscan(from), bitscan(single_push)), list);
-				if (c == WHITE && (from & rank_mask[RANK_2])) {
-					u64 const double_push = single_push << 8;
-					if (double_push & vacancy_mask)
-						add_move(move_double_push(bitscan(from), bitscan(double_push)), list);
-				} else if (c == BLACK && (from & rank_mask[RANK_7])) {
-					u64 const double_push = single_push >> 8;
-					if (double_push & vacancy_mask)
-						add_move(move_double_push(bitscan(from), bitscan(double_push)), list);
-				}
+			add_move(move_normal(bitscan(from), bitscan(single_push)), list);
+			if (c == WHITE && (from & rank_mask[RANK_2])) {
+				u64 const double_push = single_push << 8;
+				if (double_push & vacancy_mask)
+					add_move(move_double_push(bitscan(from), bitscan(double_push)), list);
+			} else if (c == BLACK && (from & rank_mask[RANK_7])) {
+				u64 const double_push = single_push >> 8;
+				if (double_push & vacancy_mask)
+					add_move(move_double_push(bitscan(from), bitscan(double_push)), list);
 			}
 		}
 	}
