@@ -1155,6 +1155,8 @@ int main(int argc, char** argv)
 		case 'f':
 			fen_set = true;
 			fen = optarg;
+			if (fen == "startpos")
+				fen = INITIAL_POSITION;
 			break;
 		case '?':
 			std::cout << "Unknown option: " << optopt << "\n";
@@ -1170,7 +1172,8 @@ int main(int argc, char** argv)
 			  << "-e => Count extras: captures, enpassants, castles and promotions\n"
 			  << "-s => Split(Divide) at root\n"
 			  << "-d <depth> => Max depth\n"
-			  << "-f \"<fen>\" => Perft the fen" << std::endl;
+			  << "-f \"<fen>\" => Perft the fen\n"
+			  << "To perft the initial position you may also use ./perft(_popcnt) -f startpos <flags>" << std::endl;
 		return 1;
 	}
 
