@@ -158,7 +158,7 @@ struct Movelist {
 struct State {
 	u64 pinned_bb;
 	u64 checkers_bb;
-	u64 ep_sq_bb;
+	u64 ep_sq;
 	int move;
 	int castling_rights;
 };
@@ -415,7 +415,7 @@ void do_move(Position* const pos, int const m)
 	State* const next = ++pos->state;
 
 	curr->move     = m;
-	next->ep_sq_bb = 0ULL;
+	next->ep_sq    = -1;
 
 	int const from = from_sq(m),
 	          to   = to_sq(m),
@@ -438,7 +438,7 @@ void do_move(Position* const pos, int const m)
 	case DOUBLE_PUSH:
 		{
 			move_piece<c>(pos, from, to, PAWN);
-			next->ep_sq_bb = (c == WHITE ? BB(from + 8) : BB(from - 8));
+			next->ep_sq = (c == WHITE ? from + 8 : from - 8);
 		}
 		break;
 	case ENPASSANT:
@@ -556,11 +556,11 @@ void init_pos(Position* const pos)
 		pos->board[i] = 0;
 	for (i = 0; i != 9; ++i)
 		pos->bb[i] = 0ULL;
-	pos->state                        = pos->hist;
-	pos->state->pinned_bb             = 0ULL;
-	pos->state->castling_rights       = 0;
-	pos->state->ep_sq_bb              = 0ULL;
-	pos->state->checkers_bb           = 0ULL;
+	pos->state                  = pos->hist;
+	pos->state->pinned_bb       = 0ULL;
+	pos->state->castling_rights = 0;
+	pos->state->ep_sq           = -1;
+	pos->state->checkers_bb     = 0ULL;
 }
 
 int set_pos(Position* pos, std::string fen)
@@ -601,10 +601,10 @@ int set_pos(Position* pos, std::string fen)
 			pos->state->castling_rights |= get_cr_from_char(c);
 		}
 	}
-	int ep_sq = 0;
+	int ep_sq = -1;
 	if ((c = fen[index++]) != '-') {
 		ep_sq = (c - 'a') + ((fen[index++] - '1') << 3);
-		pos->state->ep_sq_bb = BB(ep_sq);
+		pos->state->ep_sq = ep_sq;
 	}
 
 	return index;
@@ -702,11 +702,10 @@ static void gen_checker_caps(Position* pos, u64 checkers_bb, Movelist* list)
 	int checker, atker, checker_pt;
 	u64 const pawns_bb      = pos->bb[PAWN] & pos->bb[c],
 	          non_king_mask = ~pos->bb[KING],
-	          ep_sq_bb      = pos->state->ep_sq_bb,
 		  full_bb       = pos->bb[FULL];
-	if (    ep_sq_bb
-	    && (pawn_shift<!c>(ep_sq_bb) & checkers_bb)) {
-		int const ep_sq = bitscan(ep_sq_bb);
+	int const ep_sq         = pos->state->ep_sq;
+	if (    ep_sq != -1
+	    && (pawn_shift<!c>(BB(ep_sq)) & checkers_bb)) {
 		u64 ep_poss     = pawns_bb & p_atks_bb[!c][ep_sq];
 		while (ep_poss) {
 			atker    = bitscan(ep_poss);
@@ -772,74 +771,51 @@ static void gen_check_evasions(Position* pos, Movelist* list)
 }
 
 template<int c>
-static void gen_pawn_captures(Position* pos, Movelist* list)
+static void gen_pawn_moves(Position* pos, Movelist* list)
 {
-	u64 cap_candidates;
-	int from, to, cap_pt;
-	u64 pawns_bb = pos->bb[PAWN] & pos->bb[c];
-	if (pos->state->ep_sq_bb) {
-		int const ep_sq   = bitscan(pos->state->ep_sq_bb);
-		u64       ep_poss = pawns_bb & p_atks_bb[!c][ep_sq];
-		while (ep_poss) {
-			from     = bitscan(ep_poss);
-			ep_poss &= ep_poss - 1;
-			add_move(move_ep(from, ep_sq), list);
-		}
-	}
-	u64 prom_candidates_bb = pawns_bb & rank_mask[(c == WHITE ? RANK_7 : RANK_2)];
-	pawns_bb ^= prom_candidates_bb;
-	while (prom_candidates_bb) {
-		from                = bitscan(prom_candidates_bb);
-		prom_candidates_bb &= prom_candidates_bb - 1;
-		cap_candidates      = p_atks_bb[c][from] & pos->bb[!c];
-		while (cap_candidates) {
-			to              = bitscan(cap_candidates);
-			cap_candidates &= cap_candidates - 1;
-			cap_pt          = pos->board[to];
-			add_move(move_prom_cap(from, to, TO_QUEEN, cap_pt), list);
-			add_move(move_prom_cap(from, to, TO_KNIGHT, cap_pt), list);
-			add_move(move_prom_cap(from, to, TO_ROOK, cap_pt), list);
-			add_move(move_prom_cap(from, to, TO_BISHOP, cap_pt), list);
-		}
-	}
-	while (pawns_bb) {
-		from           = bitscan(pawns_bb);
-		pawns_bb      &= pawns_bb - 1;
-		cap_candidates = p_atks_bb[c][from] & pos->bb[!c];
-		while (cap_candidates) {
-			to              = bitscan(cap_candidates);
-			cap_pt          = pos->board[to];
-			cap_candidates &= cap_candidates - 1;
-			add_move(move_cap(from, to, cap_pt), list);
-		}
-	}
-}
-
-template<int c>
-static void gen_pawn_quiets(Position* pos, Movelist* list)
-{
-	u64 single_push, from;
+	int to, cap_pt, fr;
+	u64 single_push, from, cap_candidates;
 	u64 const vacancy_mask = ~pos->bb[FULL];
 	u64       pawns_bb     = pos->bb[PAWN] & pos->bb[c];
 	u64 prom_candidates_bb = pawns_bb & rank_mask[(c == WHITE ? RANK_7 : RANK_2)];
-	pawns_bb ^= prom_candidates_bb;
+	pawns_bb              ^= prom_candidates_bb;
+	if (pos->state->ep_sq != -1) {
+		int const ep_sq   = pos->state->ep_sq;
+		u64       ep_poss = pawns_bb & p_atks_bb[!c][ep_sq];
+		while (ep_poss) {
+			fr       = bitscan(ep_poss);
+			ep_poss &= ep_poss - 1;
+			add_move(move_ep(fr, ep_sq), list);
+		}
+	}
 	while (prom_candidates_bb) {
-		from                = prom_candidates_bb & -prom_candidates_bb;
+		fr                  = bitscan(prom_candidates_bb);
 		prom_candidates_bb &= prom_candidates_bb - 1;
-		single_push         = pawn_shift<c>(from);
+		single_push         = pawn_shift<c>(BB(fr));
+		cap_candidates      = p_atks_bb[c][fr] & pos->bb[!c];
 		if (single_push & vacancy_mask) {
-			int const fr = bitscan(from),
-				  to = bitscan(single_push);
+			to = bitscan(single_push);
 			add_move(move_prom(fr, to, TO_QUEEN), list);
 			add_move(move_prom(fr, to, TO_KNIGHT), list);
 			add_move(move_prom(fr, to, TO_ROOK), list);
 			add_move(move_prom(fr, to, TO_BISHOP), list);
 		}
+		while (cap_candidates) {
+			to              = bitscan(cap_candidates);
+			cap_candidates &= cap_candidates - 1;
+			cap_pt          = pos->board[to];
+			add_move(move_prom_cap(fr, to, TO_QUEEN, cap_pt), list);
+			add_move(move_prom_cap(fr, to, TO_KNIGHT, cap_pt), list);
+			add_move(move_prom_cap(fr, to, TO_ROOK, cap_pt), list);
+			add_move(move_prom_cap(fr, to, TO_BISHOP, cap_pt), list);
+		}
 	}
 	while (pawns_bb) {
 		from        = pawns_bb & -pawns_bb;
+		fr          = bitscan(pawns_bb);
 		pawns_bb   &= pawns_bb - 1;
 		single_push = pawn_shift<c>(from);
+		cap_candidates = p_atks_bb[c][fr] & pos->bb[!c];
 		if (single_push & vacancy_mask) {
 			add_move(move_normal(bitscan(from), bitscan(single_push)), list);
 			if (c == WHITE && (from & rank_mask[RANK_2])) {
@@ -851,6 +827,12 @@ static void gen_pawn_quiets(Position* pos, Movelist* list)
 				if (double_push & vacancy_mask)
 					add_move(move_double_push(bitscan(from), bitscan(double_push)), list);
 			}
+		}
+		while (cap_candidates) {
+			to              = bitscan(cap_candidates);
+			cap_pt          = pos->board[to];
+			cap_candidates &= cap_candidates - 1;
+			add_move(move_cap(fr, to, cap_pt), list);
 		}
 	}
 }
@@ -910,16 +892,14 @@ static void gen_moves(Position* pos, Movelist* list)
 template<>
 inline void gen_moves<PAWN, WHITE>(Position* pos, Movelist* list)
 {
-	gen_pawn_quiets<WHITE>(pos, list);
-	gen_pawn_captures<WHITE>(pos, list);
+	gen_pawn_moves<WHITE>(pos, list);
 	gen_moves<KNIGHT, WHITE>(pos, list);
 }
 
 template<>
 inline void gen_moves<PAWN, BLACK>(Position* pos, Movelist* list)
 {
-	gen_pawn_quiets<BLACK>(pos, list);
-	gen_pawn_captures<BLACK>(pos, list);
+	gen_pawn_moves<BLACK>(pos, list);
 	gen_moves<KNIGHT, BLACK>(pos, list);
 }
 
@@ -983,7 +963,7 @@ static inline int legal_move(Position* const pos, int move)
 	int const from = from_sq(move);
 	int const ksq  = bitscan(pos->bb[KING] & pos->bb[c]);
 	if (move_type(move) == ENPASSANT) {
-		u64 const to_bb  = pos->state->ep_sq_bb;
+		u64 const to_bb  = BB(pos->state->ep_sq);
 		u64 const cap_bb = pawn_shift<!c>(to_bb);
 		u64 const pieces = (pos->bb[FULL] ^ BB(from) ^ cap_bb) | to_bb;
 
