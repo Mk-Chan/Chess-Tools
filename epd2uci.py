@@ -24,7 +24,7 @@ def print_help():
     print("python3 epd2uci.py -e <engine> -f <epd-collection> -t <time-per-position>")
 
 try:
-    opts, args = getopt.getopt(sys.argv[1:], "hf:e:t:")
+    opts, args = getopt.getopt(sys.argv[1:], "f:e:t:")
 except:
     print_help()
     sys.exit(1)
@@ -40,9 +40,9 @@ for opt, arg in opts:
     elif opt == '-t':
         time_per_pos = float(arg)
         params_left -= 1
-    elif opt == '-h':
+    else:
         print_help()
-        sys.exit(0)
+        sys.exit(1)
 
 if params_left > 0:
     print_help()
