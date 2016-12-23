@@ -9,5 +9,5 @@ A collection of tools to help with chess programming.
 
 * epd2uci
 
-	A script that runs a chess engine(UCI only at the moment) for the given number of seconds over
-	a file containing a list of EPDs and prints results. Requires the python-chess module.
+	A Python3 script that runs a chess engine(UCI only at the moment) for the given number of seconds over
+	a file containing a list of EPDs and prints results. Requires the Python3 python-chess module.
