@@ -104,9 +104,10 @@ for epd in epd_file:
 
     print("Current success rate: " + str(successes * 100.0 / total) + "%")
     print()
+engine.quit()
 
 print("Success rate: " + str(successes * 100.0 / total) + "%")
-print("Failed: " + (total - successes))
+print("Failed: " + str(total - successes))
 print("Failed EPDs:")
 for epd in failed_epds:
     print(epd)
