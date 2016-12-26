@@ -111,21 +111,21 @@ enum Ranks {
 #define rank_of(sq) (sq >> 3)
 #define file_of(sq) (sq & 7)
 
-#define from_sq(m)   (m & 0x3f)
 #define to_sq(m)     ((m >> 6) & 0x3f)
+#define from_sq(m)   (m & 0x3f)
+#define cap_type(m)  ((m & CAP_TYPE_MASK) >> CAP_TYPE_SHIFT)
 #define move_type(m) (m & MOVE_TYPE_MASK)
 #define prom_type(m) ((m & PROM_TYPE_MASK) >> PROM_TYPE_SHIFT)
-#define cap_type(m)  ((m & CAP_TYPE_MASK) >> CAP_TYPE_SHIFT)
 
 #define popcnt(bb)  (__builtin_popcountll(bb))
 #define bitscan(bb) (__builtin_ctzll(bb))
 
-#define move_normal(from, to)              (from | (to << 6) | NORMAL)
-#define move_cap(from, to, cap)            (from | (to << 6) | CAPTURE | (cap << CAP_TYPE_SHIFT))
-#define move_double_push(from, to)         (from | (to << 6) | DOUBLE_PUSH)
-#define move_castle(from, to)              (from | (to << 6) | CASTLE)
 #define move_ep(from, to)                  (from | (to << 6) | ENPASSANT)
+#define move_cap(from, to, cap)            (from | (to << 6) | CAPTURE | (cap << CAP_TYPE_SHIFT))
 #define move_prom(from, to, prom)          (from | (to << 6) | PROMOTION | prom)
+#define move_normal(from, to)              (from | (to << 6) | NORMAL)
+#define move_castle(from, to)              (from | (to << 6) | CASTLE)
+#define move_double_push(from, to)         (from | (to << 6) | DOUBLE_PUSH)
 #define move_prom_cap(from, to, prom, cap) (from | (to << 6) | PROM_CAPTURE | prom | (cap << CAP_TYPE_SHIFT))
 
 static int stm;
@@ -156,10 +156,9 @@ struct Movelist {
 };
 
 struct State {
-	u64 pinned_bb;
 	u64 checkers_bb;
-	u64 ep_sq;
-	int move;
+	u64 pinned_bb;
+	int ep_sq;
 	int castling_rights;
 };
 
@@ -177,7 +176,7 @@ static inline void move_piece(Position* const pos, int const from, int const to,
 	pos->bb[FULL]    ^= from_to;
 	pos->bb[c]       ^= from_to;
 	pos->bb[pt]      ^= from_to;
-	pos->board[to]    = pos->board[from];
+	pos->board[to]    = pt;
 	pos->board[from]  = 0;
 }
 
@@ -327,72 +326,56 @@ void init_atks()
 }
 
 template<int c>
-void undo_move(Position* const pos)
+void undo_move(Position* const pos, int const m)
 {
 	--pos->state;
 
-	int const m    = pos->state->move,
-	          from = from_sq(m),
+	int const from = from_sq(m),
 	          to   = to_sq(m),
 	          mt   = move_type(m);
 
 	switch (mt) {
 	case NORMAL:
-		{
-			move_piece<c>(pos, to, from, pos->board[to]);
-		}
+		move_piece<c>(pos, to, from, pos->board[to]);
 		break;
 	case CAPTURE:
-		{
-			move_piece<c>(pos, to, from, pos->board[to]);
-			put_piece<!c>(pos, to, cap_type(m));
-		}
+		move_piece<c>(pos, to, from, pos->board[to]);
+		put_piece<!c>(pos, to, cap_type(m));
 		break;
 	case DOUBLE_PUSH:
-		{
-			move_piece<c>(pos, to, from, PAWN);
-		}
+		move_piece<c>(pos, to, from, PAWN);
 		break;
 	case ENPASSANT:
-		{
-			put_piece<!c>(pos, (c == WHITE ? to - 8 : to + 8), PAWN);
-			move_piece<c>(pos, to, from, PAWN);
-		}
+		put_piece<!c>(pos, (c == WHITE ? to - 8 : to + 8), PAWN);
+		move_piece<c>(pos, to, from, PAWN);
 		break;
 	case CASTLE:
-		{
-			move_piece<c>(pos, to, from, KING);
-
-			switch(to) {
-			case C1:
-				move_piece<c>(pos, D1, A1, ROOK);
-				break;
-			case G1:
-				move_piece<c>(pos, F1, H1, ROOK);
-				break;
-			case C8:
-				move_piece<c>(pos, D8, A8, ROOK);
-				break;
-			case G8:
-				move_piece<c>(pos, F8, H8, ROOK);
-				break;
-			default:
-				break;
-			}
+		move_piece<c>(pos, to, from, KING);
+		switch(to) {
+		case C1:
+			move_piece<c>(pos, D1, A1, ROOK);
+			break;
+		case G1:
+			move_piece<c>(pos, F1, H1, ROOK);
+			break;
+		case C8:
+			move_piece<c>(pos, D8, A8, ROOK);
+			break;
+		case G8:
+			move_piece<c>(pos, F8, H8, ROOK);
+			break;
+		default:
+			break;
 		}
 		break;
 	case PROM_CAPTURE:
-		{
-			remove_piece<c>(pos, to, prom_type(m));
-			put_piece<c>(pos, from, PAWN);
-			put_piece<!c>(pos, to, cap_type(m));
-		}
+		remove_piece<c>(pos, to, prom_type(m));
+		put_piece<c>(pos, from, PAWN);
+		put_piece<!c>(pos, to, cap_type(m));
 		break;
 	default:
-		{
-			remove_piece<c>(pos, to, prom_type(m));
-			put_piece<c>(pos, from, PAWN);
-		}
+		remove_piece<c>(pos, to, prom_type(m));
+		put_piece<c>(pos, from, PAWN);
 		break;
 	}
 }
@@ -414,7 +397,6 @@ void do_move(Position* const pos, int const m)
 	State* const curr = pos->state;
 	State* const next = ++pos->state;
 
-	curr->move     = m;
 	next->ep_sq    = -1;
 
 	int const from = from_sq(m),
@@ -425,62 +407,47 @@ void do_move(Position* const pos, int const m)
 
 	switch (mt) {
 	case NORMAL:
-		{
-			move_piece<c>(pos, from, to, pos->board[from]);
-		}
+		move_piece<c>(pos, from, to, pos->board[from]);
 		break;
 	case CAPTURE:
-		{
-			remove_piece<!c>(pos, to, cap_type(m));
-			move_piece<c>(pos, from, to, pos->board[from]);
-		}
+		remove_piece<!c>(pos, to, cap_type(m));
+		move_piece<c>(pos, from, to, pos->board[from]);
 		break;
 	case DOUBLE_PUSH:
-		{
-			move_piece<c>(pos, from, to, PAWN);
-			next->ep_sq = (c == WHITE ? from + 8 : from - 8);
-		}
+		move_piece<c>(pos, from, to, PAWN);
+		next->ep_sq = (c == WHITE ? from + 8 : from - 8);
 		break;
 	case ENPASSANT:
-		{
-			move_piece<c>(pos, from, to, PAWN);
-			remove_piece<!c>(pos, (c == WHITE ? to - 8 : to + 8), PAWN);
-		}
+		move_piece<c>(pos, from, to, PAWN);
+		remove_piece<!c>(pos, (c == WHITE ? to - 8 : to + 8), PAWN);
 		break;
 	case CASTLE:
-		{
-			move_piece<c>(pos, from, to, KING);
-
-			switch (to) {
-			case C1:
-				move_piece<c>(pos, A1, D1, ROOK);
-				break;
-			case G1:
-				move_piece<c>(pos, H1, F1, ROOK);
-				break;
-			case C8:
-				move_piece<c>(pos, A8, D8, ROOK);
-				break;
-			case G8:
-				move_piece<c>(pos, H8, F8, ROOK);
-				break;
-			default:
-				break;
-			}
+		move_piece<c>(pos, from, to, KING);
+		switch (to) {
+		case C1:
+			move_piece<c>(pos, A1, D1, ROOK);
+			break;
+		case G1:
+			move_piece<c>(pos, H1, F1, ROOK);
+			break;
+		case C8:
+			move_piece<c>(pos, A8, D8, ROOK);
+			break;
+		case G8:
+			move_piece<c>(pos, H8, F8, ROOK);
+			break;
+		default:
+			break;
 		}
 		break;
 	case PROM_CAPTURE:
-		{
-			remove_piece<!c>(pos, to, cap_type(m));
-			remove_piece<c>(pos, from, PAWN);
-			put_piece<c>(pos, to, prom_type(m));
-		}
+		remove_piece<!c>(pos, to, cap_type(m));
+		remove_piece<c>(pos, from, PAWN);
+		put_piece<c>(pos, to, prom_type(m));
 		break;
 	default:
-		{
-			remove_piece<c>(pos, from, PAWN);
-			put_piece<c>(pos, to, prom_type(m));
-		}
+		remove_piece<c>(pos, from, PAWN);
+		put_piece<c>(pos, to, prom_type(m));
 		break;
 	}
 }
@@ -1073,7 +1040,7 @@ void perft(Position* pos, Movelist* list, int depth)
 				divide_count = leaves;
 			do_move<c>(pos, *move);
 			perft<!c, count_extras, false>(pos, list + 1, depth - 1);
-			undo_move<c>(pos);
+			undo_move<c>(pos, *move);
 			if (divide) {
 				divide_count = leaves - divide_count;
 				move_str(*move, mstr);
