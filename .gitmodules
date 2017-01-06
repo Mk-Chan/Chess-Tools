@@ -1,0 +1,3 @@
+[submodule "libs/python-chess"]
+	path = libs/python-chess
+	url = https://github.com/niklasf/python-chess

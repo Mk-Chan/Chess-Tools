@@ -15,8 +15,15 @@
  You should have received a copy of the GNU General Public License
  along with this program. If not, see <http://www.gnu.org/licenses/>.
 """
+import os
 import sys
 import getopt
+import inspect
+
+lib_folder = os.path.realpath(os.path.abspath(os.path.join(os.path.split(inspect.getfile(inspect.currentframe()))[0],"libs/python-chess")))
+if lib_folder not in sys.path:
+    sys.path.insert(0, lib_folder)
+
 import chess.uci
 
 def print_help():
