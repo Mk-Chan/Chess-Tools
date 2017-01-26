@@ -1112,35 +1112,32 @@ int main(int argc, char** argv)
 
 	Movelist* list = new Movelist[max_depth];
 	long t1, t2;
-	int depth;
-	for (depth = 1; depth <= max_depth; ++depth) {
-		leaves     = 0ULL;
-		captures   = 0ULL;
-		enpassants = 0ULL;
-		castles    = 0ULL;
-		promotions = 0ULL;
-		t1 = std::chrono::duration_cast<std::chrono::milliseconds> (
-			std::chrono::system_clock::now().time_since_epoch()
-		).count();
-		stm == WHITE
-			? count_extras ? divide ? perft<WHITE, true, true>(&pos, list, depth)
-			                        : perft<WHITE, true, false>(&pos, list, depth)
-				       : divide ? perft<WHITE, false, true>(&pos, list, depth)
-			                        : perft<WHITE, false, false>(&pos, list, depth)
-			: count_extras ? divide ? perft<BLACK, true, true>(&pos, list, depth)
-			                        : perft<BLACK, true, false>(&pos, list, depth)
-				       : divide ? perft<BLACK, false, true>(&pos, list, depth)
-			                        : perft<BLACK, false, false>(&pos, list, depth);
-		t2 = std::chrono::duration_cast<std::chrono::milliseconds> (
-			std::chrono::system_clock::now().time_since_epoch()
-		).count();
-		printf("Perft(%2d): %'ld ms\n", depth, (t2 - t1));
-		printf("Leaves:     %'llu\n", leaves);
-		if (count_extras) {
-			printf("Captures:   %'llu\n", captures);
-			printf("Enpassants: %'llu\n", enpassants);
-			printf("Castles:    %'llu\n", castles);
-			printf("Promotions: %'llu\n", promotions);
-		}
+	leaves     = 0ULL;
+	captures   = 0ULL;
+	enpassants = 0ULL;
+	castles    = 0ULL;
+	promotions = 0ULL;
+	t1 = std::chrono::duration_cast<std::chrono::milliseconds> (
+		std::chrono::system_clock::now().time_since_epoch()
+	).count();
+	stm == WHITE
+		? count_extras ? divide ? perft<WHITE, true, true>(&pos, list, max_depth)
+					: perft<WHITE, true, false>(&pos, list, max_depth)
+			       : divide ? perft<WHITE, false, true>(&pos, list, max_depth)
+					: perft<WHITE, false, false>(&pos, list, max_depth)
+		: count_extras ? divide ? perft<BLACK, true, true>(&pos, list, max_depth)
+					: perft<BLACK, true, false>(&pos, list, max_depth)
+			       : divide ? perft<BLACK, false, true>(&pos, list, max_depth)
+					: perft<BLACK, false, false>(&pos, list, max_depth);
+	t2 = std::chrono::duration_cast<std::chrono::milliseconds> (
+		std::chrono::system_clock::now().time_since_epoch()
+	).count();
+	printf("Perft(%2d): %'ld ms\n", max_depth, (t2 - t1));
+	printf("Leaves:     %'llu\n", leaves);
+	if (count_extras) {
+		printf("Captures:   %'llu\n", captures);
+		printf("Enpassants: %'llu\n", enpassants);
+		printf("Castles:    %'llu\n", castles);
+		printf("Promotions: %'llu\n", promotions);
 	}
 }
