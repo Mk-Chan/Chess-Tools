@@ -114,7 +114,10 @@ for epd in epd_file:
 engine.quit()
 
 print("Success rate: " + str(successes * 100.0 / total) + "%")
-print("Failed: " + str(total - successes))
-print("Failed EPDs:")
-for epd in failed_epds:
-    print(epd)
+if total != successes:
+    print("Failed: " + str(total - successes))
+    print("Failed EPDs in failed.epd")
+
+    fails_file = open("failed.epd", "w")
+    for epd in failed_epds:
+        fails_file.write(epd)
