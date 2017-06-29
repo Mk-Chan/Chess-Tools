@@ -1,6 +1,7 @@
+#!/bin/python3
 """
- A free tool to test UCI engines over epd collections using the python-chess module
- Copyright (C) 2016  Manik Charan
+ A free tool to test UCI/Xboard engines over epd collections using the python-chess module
+ Copyright (C) 2016-2017 Manik Charan
 
  This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
