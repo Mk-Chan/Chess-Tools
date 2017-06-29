@@ -28,18 +28,21 @@ import chess.uci
 
 def print_help():
     print("Usage:")
-    print("python3 epd2uci.py -e <engine> -f <epd-collection> -t <time-per-position>")
+    print("python3 epd2uci.py -e <engine> -p <xboard/uci> -f <epd-collection> -t <seconds-per-position>")
 
 try:
-    opts, args = getopt.getopt(sys.argv[1:], "f:e:t:")
+    opts, args = getopt.getopt(sys.argv[1:], "f:e:t:p:")
 except:
     print_help()
     sys.exit(1)
 
-params_left = 3
+params_left = 4
 for opt, arg in opts:
     if opt == '-e':
         engine = arg
+        params_left -= 1
+    elif opt == '-p':
+        proto = arg
         params_left -= 1
     elif opt == '-f':
         epd_file = arg
@@ -58,8 +61,15 @@ if params_left > 0:
 board = chess.Board()
 
 epd_file = open(epd_file, 'r')
-engine = chess.uci.popen_engine(engine)
-engine.uci()
+if proto == "uci":
+    engine = chess.uci.popen_engine(engine)
+    engine.uci()
+elif proto == "xboard":
+    engine = chess.xboard.popen_engine(engine)
+    engine.xboard()
+else:
+    print("Unrecognized protocol!")
+    sys.exit(1)
 
 successes = 0
 total = 0
@@ -86,8 +96,13 @@ for epd in epd_file:
     elif ams != None:
         print("Avoid move(s): " + ms[:-1])
 
-    engine.position(board)
-    res = engine.go(movetime=(time_per_pos * 1000))
+    if proto == "uci":
+        engine.position(board)
+        res = engine.go(movetime=(time_per_pos * 1000))
+    else:
+        engine.setboard(board)
+        engine.st(time_per_pos)
+        res = engine.go()
     if bms != None:
         fail = True
         for bm in bms:
