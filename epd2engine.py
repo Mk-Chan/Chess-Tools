@@ -25,6 +25,14 @@ if lib_folder not in sys.path:
     sys.path.insert(0, lib_folder)
 
 import chess.uci
+import chess.xboard
+
+def move(res):
+    global proto
+    if proto == "uci":
+        return res.bestmove
+    else:
+        return res
 
 def print_help():
     print("Usage:")
@@ -106,24 +114,22 @@ for epd in epd_file:
     if bms != None:
         fail = True
         for bm in bms:
-            if res.bestmove == bm:
+            if move(res) == bm:
                 fail = False
                 break
     elif ams != None:
         fail = False
         for am in ams:
-            if res.bestmove == am:
+            if move(res) == am:
                 fail = True
                 break
     if (fail):
         print("Failed")
-        print("Engine move: " + str(res.bestmove))
         failed_epds.append(epd)
     else:
         print("Succeeded")
-        print("Engine move: " + str(res.bestmove))
         successes += 1
-
+    print("Engine move: " + str(move(res)))
     print("Current success rate: " + str(successes * 100.0 / total) + "%")
     print()
 engine.quit()
