@@ -109,6 +109,7 @@ for epd in epd_file:
         engine.position(board)
         res = engine.go(movetime=(time_per_pos * 1000))
     else:
+        engine.force()
         engine.setboard(board)
         engine.st(time_per_pos)
         res = engine.go()
