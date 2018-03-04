@@ -1,5 +1,6 @@
 # Chess-Tools
 A collection of tools to help with chess programming.
+Don't forget to fetch the submodules as well with `git submodule update --init --recursive`
 
 ## Current List
 * epd2engine
